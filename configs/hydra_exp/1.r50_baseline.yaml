@@ -5,6 +5,17 @@
 # gives Acc@1 77.438 Acc@5 93.658 on v0.1.4
 # Total time: 10h 41.7m (4 x V100)
 
+# on 21.06.21 with 1 GPU gives this. it's significantly lower, but probably due to smaller batch size and very strong overfit
+# [06-21 13:21:02] - Train loss: 1.6839 | Acc@1: 83.8419 | Acc@5: 94.6885
+# [06-21 13:21:02] - Val   loss: 1.8793 | Acc@1: 76.9500 | Acc@5: 93.1900
+# [06-21 13:21:02] - Model params: 25.56M
+# [06-21 13:21:02] - Acc@1 76.950 Acc@5 93.190
+# [06-21 13:21:02] - Total time: 42h 32.4m
+
+# works much better without filtering BN from wd. it look like it greatly helps to avoid overfit
+# [06-30 11:26:59] - Train loss: 1.8060 | Acc@1: 80.0996 | Acc@5: 93.2425
+# [06-30 11:26:59] - Val   loss: 1.8538 | Acc@1: 77.1380 | Acc@5: 93.5880
+
 defaults:
   - /base@_here_
 
@@ -16,6 +27,7 @@ log:
 
 # use larger weight decay because of label smoothing
 optim:
+  momentum: 0.9
   weight_decay: 3e-5
 
 # use label smoothing
@@ -28,5 +40,5 @@ loader:
 
 run:
   stages:
-    - {start: 0, end: 8, lr: [0.001, 0.25]}
-    - {start: 8, end: 90, lr: [0.25, 0], lr_mode: cos}
+    - {start: 0, end: 8, lr: [0.001, 1.0]}
+    - {start: 8, end: 90, lr: [1.0, 0], lr_mode: cos}

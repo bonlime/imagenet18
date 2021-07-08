@@ -22,6 +22,8 @@ class LoaderConfig:
     # number of classes in dataset
     num_classes: int = 1000
     _is_train: bool = False
+    root_data_dir: str = "${env:IMAGENET_DIR}"
+    use_tfrecords: bool = False
 
 
 @dataclass
@@ -37,6 +39,10 @@ class TrainLoaderConfig(LoaderConfig):
     gray_prob: float = 0
     # probability of applying brightness-contrast-hue-saturation augmentation
     color_twist_prob: float = 0
+    # 3 arg below are for color twist augmentation. the have no effect if `color_twist_prob` is 0
+    contrast_range: Tuple[float, float] = (0.7, 1.3)
+    brightness_range: Tuple[float, float] = (0.7, 1.3)
+
     # if True randomly use triangular / cubic interpolations for images. Works as a strong augmentation and makes model
     # very robust to interpolation method during inference
     random_interpolation: bool = False
@@ -97,6 +103,12 @@ class RunnerConfig:
 class LoggerConfig:
     exp_name: str = "test_run"
     dir: str = "logs"
+    # print model before training. usefull to validate that everything is correct
+    print_model: bool = False
+    # add histogram of weights to TB each epoch
+    histogram: bool = False
+    # Flag to also save optimizer into save dict. makes it 2x times larger
+    save_optim: bool = False
 
 
 # this 4 lines are an example of how to make some attributes a group. maybe usefull at some stage
@@ -115,9 +127,14 @@ class StrictConfig:
     # flag to convert all convs to WS convs
     weight_standardization: bool = False
 
+    # flag to filter BN from wd. makes it much easier for model to overfit
+    filter_bn_wd: bool = False
+    bn_momentum: float = 0.1
+    init_gamma: Optional[float] = 1.72  # for swish
+
     # by default using fused version of SGD because it's slightly faster
     optim: Dict[str, Any] = field(
-        default_factory=lambda: dict(_target_="torch.optim._multi_tensor.SGD", lr=0, weight_decay=1e-4, momentum=0.9)
+        default_factory=lambda: dict(_target_="torch.optim._multi_tensor.SGD", lr=0, weight_decay=1e-4)
     )
     # default loss is CCE
     criterion: Dict[str, Any] = field(
@@ -133,6 +150,7 @@ class StrictConfig:
     # this arg should be set in your shell
     world_size: int = "${env:WORLD_SIZE}"
     local_rank: int = "${env:LOCAL_RANK}"
+
     # this would be filled later in code
     distributed: bool = False
     is_master: bool = True

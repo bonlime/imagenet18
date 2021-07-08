@@ -2,12 +2,12 @@
 data loader using NVIDIA DALI v1.2
 
 there are still two things missing comared to previous version of loader
-TODO: (emil 19.06.21) TFRecords data loading
 TODO: (emil 19.06.21) Rectangular Validation
 TODO: (emil 19.06.21) mixmatch pipeline 
 """
 import math
 import torch
+from pathlib import Path
 from copy import deepcopy
 from loguru import logger
 from omegaconf import OmegaConf
@@ -17,14 +17,11 @@ import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 from nvidia.dali.plugin.base_iterator import LastBatchPolicy
 from nvidia.dali.plugin.pytorch import DALIClassificationIterator
+import nvidia.dali.tfrecord as tfrec
 
 from pytorch_tools.utils.misc import env_rank, env_world_size, listify
 
 from src.arg_parser import LoaderConfig, StrictConfig, TrainLoaderConfig, ValLoaderConfig
-
-ROOT_DATA_DIR = "data/"  # images should be mounted or linked to data/ folder inside this repo
-ROOT_DATA_DIR = "/data/datasets/ImageNet/raw-data/"
-
 
 # values used for normalization. there is no reason to use Imagenet mean/std so i'm normalizing to [-5, 5]
 DATA_MEAN = (0.5 * 255, 0.5 * 255, 0.5 * 255)
@@ -42,14 +39,21 @@ def mix(condition, true_case, false_case):
 
 @pipeline_def
 def train_pipeline(cfg: TrainLoaderConfig):
-
-    jpeg, label = fn.readers.file(
-        file_root=ROOT_DATA_DIR + "/train/",
-        random_shuffle=True,
-        shard_id=env_rank(),
-        num_shards=env_world_size(),
-        name="Reader",
-    )
+    root_dir = Path(cfg.root_data_dir)
+    common_input_kwargs = dict(random_shuffle=True, shard_id=env_rank(), num_shards=env_world_size(), name="Reader")
+    if cfg.use_tfrecords:
+        records = [str(i) for i in sorted((root_dir / "train_records").iterdir())]
+        indexes = [str(i) for i in sorted((root_dir / "train_indexes").iterdir())]
+        features = {
+            "image/encoded": tfrec.FixedLenFeature((), tfrec.string, ""),
+            "image/class/label": tfrec.FixedLenFeature([1], tfrec.int64, -1),
+        }
+        inputs = fn.readers.tfrecord(
+            path=records, index_path=indexes, features=features, read_ahead=True, **common_input_kwargs,
+        )
+        jpeg, label = inputs["image/encoded"], inputs["image/class/label"]
+    else:
+        jpeg, label = fn.readers.file(file_root=root_dir / "train", **common_input_kwargs)
     image = fn.decoders.image_random_crop(
         jpeg,
         device="mixed",
@@ -114,9 +118,21 @@ def train_pipeline(cfg: TrainLoaderConfig):
 
 @pipeline_def
 def val_pipeline(cfg: ValLoaderConfig):
-    jpeg, label = fn.readers.file(
-        file_root=ROOT_DATA_DIR + "/val/", shard_id=env_rank(), num_shards=env_world_size(), name="Reader",
-    )
+    root_dir = Path(cfg.root_data_dir)
+    common_input_kwargs = dict(shard_id=env_rank(), num_shards=env_world_size(), name="Reader")
+    if cfg.use_tfrecords:
+        records = [str(i) for i in sorted((root_dir / "val_records").iterdir())]
+        indexes = [str(i) for i in sorted((root_dir / "val_indexes").iterdir())]
+        features = {
+            "image/encoded": tfrec.FixedLenFeature((), tfrec.string, ""),
+            "image/class/label": tfrec.FixedLenFeature([1], tfrec.int64, -1),
+        }
+        inputs = fn.readers.tfrecord(
+            path=records, index_path=indexes, features=features, read_ahead=True, **common_input_kwargs
+        )
+        jpeg, label = inputs["image/encoded"], inputs["image/class/label"]
+    else:
+        jpeg, label = fn.readers.file(file_root=str(root_dir / "val"), **common_input_kwargs)
 
     image = fn.decoders.image(jpeg, device="mixed", output_type=types.RGB)
 
